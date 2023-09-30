@@ -1326,10 +1326,8 @@ size_lp1:  inp     IDE_DATA            ; read byte from drive
            lbnz    size_lp1            ; loop back if not
            inp     IDE_DATA            ; read 4 bytes into r8:r7
            plo     r7
-           plo     rf                  ; also into RF
            inp     IDE_DATA
            phi     r7
-           phi     rf
            inp     IDE_DATA
            plo     r8
            inp     IDE_DATA
@@ -1341,17 +1339,13 @@ size_lp1:  inp     IDE_DATA            ; read byte from drive
 size_lp2:  inp     IDE_DATA            ; read byte
            dec     rc                  ; decrement count
            glo     rc                  ; see if done
-           bnz     size_lp2
+           lbnz    size_lp2
            ghi     rc                  ; check high byte
-           bnz     size_lp2
-           ghi     r8                  ; save R8
-           stxd
+           lbnz    size_lp2
+           ghi     r7                  ; need 11 shift to convert to MB
+           plo     r7
            glo     r8
-           stxd
-           ghi     rf                  ; need 11 shift to convert to MB
-           plo     rf
-           glo     r8
-           phi     rf
+           phi     r7
            ghi     r8
            plo     r8                  ; 8 shift are now done
            ldi     3                   ; need 3 more
@@ -1359,20 +1353,19 @@ size_lp2:  inp     IDE_DATA            ; read byte
 size_lp3:  glo     r8                  ; shift whole number right by 1
            shr
            plo     r8
-           ghi     rf
+           ghi     r7
            shrc
-           phi     rf
+           phi     r7
            glo     r7
            shrc
-           plo     rf
+           plo     r7
            dec     rc                  ; decrement count
            glo     rc                  ; see if done
-           bnz     size_lp3            ; jump if not
-           irx                         ; recover R8
-           ldxa
-           plo     r8
-           ldx
-           phi     r8
+           lbnz    size_lp3            ; jump if not
+           ghi     r7                  ; transfer result
+           phi     rf
+           glo     r7
+           plo     rf
            sep     sret                ; and return
 
 ; ***********************************
@@ -2059,10 +2052,10 @@ resetide:  sep     scall               ; wait til drive ready
            dw      waitrdy
            bdf     ide_err             ; jump if timout
            glo     rd                  ; get selected drive
-           shr                         ; shift over 4 bits
-           shr
-           shr
-           shr
+           shl                         ; shift over 4 bits
+           shl
+           shl
+           shl
            stxd                        ; write drive select to stack
            ldi     6                   ; select device register
            str     r2                  ; write to stack
@@ -2091,15 +2084,10 @@ resetide:  sep     scall               ; wait til drive ready
            out     IDE_DATA            ; command to set features
            db      0efh
 
-
            sex     r2                  ; point X back to stack
            sep     scall               ; wait til drive ready
            dw      waitrdy
-           bdf     ide_err             ; jump if timout
-ide_good:  adi     0                   ; signal no error
-           sep     sret                ; return to caller
-ide_err:   smi     0                   ; signal error occurred
-           sep     sret
+ide_err:   sep     sret                ; return to caller
            
 wrtide:    glo     rc                  ; save consumed registers
            stxd
@@ -2202,21 +2190,18 @@ ideerror:  sex     r3                  ; setup for immediate out
            smi     0                   ; signal error occurred
            sep     sret                ; return to caller
 rdy_go:    inp     IDE_DATA            ; read status port
-           shr                         ; shift error bit
-           bdf     ideerror            ; jump if error occurred
-           shlc                        ; shift it back
-           ani     0c0h                ; mask for BSY and RDY
-           smi     040h                ; want only RDY bit
-           bnz     rdyloop             ; loop back until drive is ready
+           shl
+           bdf     rdyloop             ; wait until not busy
+           shl
+           bnf     rdyloop             ; wait until ready
+           shr                         ; clear df to signal good
            ldn     r2                  ; get status byte
-           adi     0                   ; signal good
            sep     sret                ; return to caller
 ; RF will point to wrtcmd, which is next needed after first waitrdy
 wrtcmd:    stxd                        ; write passed command to stack
            ldi     7                   ; command register
            stxd                        ; write to stack
            ghi     r8                  ; get device
-           ori     0e0h                ; add IDE bits
            stxd                        ; write to stack
            ldi     6                   ; head/device register
            stxd                        ; write to stack
@@ -3069,7 +3054,6 @@ f_isalnum: lbr     isalnum
 f_idnum:   lbr     idnum
 f_isterm:  lbr     isterm
 f_getdev:  lbr     getdev
-f_nbread:  lbr     read
 
 input:     glo     ra                  ; save RA
            stxd
@@ -3142,5 +3126,5 @@ inpterm:   smi     0                   ; signal <CTRL><C> exit
          lbr     ret
 
          org     BASE+0ff9h
-version: db      1,0,11
-         db      0,0,0,0
+version: db      1,0,13
+chsum:   db      0,0,0,0
